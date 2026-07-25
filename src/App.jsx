@@ -106,6 +106,15 @@ export default function EarnLoopApp() {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
 
+  const [showWithdraw, setShowWithdraw] = useState(false);
+  const [wMethod, setWMethod] = useState("jazzcash");
+  const [wName, setWName] = useState("");
+  const [wAccount, setWAccount] = useState("");
+  const [wError, setWError] = useState("");
+  const [wSuccess, setWSuccess] = useState("");
+  const [wWorking, setWWorking] = useState(false);
+  const [withdrawals, setWithdrawals] = useState([]);
+
   async function loadEverything(token, userId) {
     const profRows = await restRequest(`profiles?id=eq.${userId}`, { token });
     const prof = profRows[0];
@@ -128,6 +137,9 @@ export default function EarnLoopApp() {
 
     const chat = await restRequest(`chat_messages?select=*,profiles(username)&order=created_at.desc&limit=50`, { token });
     setChatMessages(chat.reverse());
+
+    const wds = await restRequest(`withdrawal_requests?user_id=eq.${userId}&order=created_at.desc&limit=20`, { token });
+    setWithdrawals(wds);
 
     if (prof) {
       const refs = await restRequest(`profiles?referred_by=eq.${userId}&select=id`, { token });
@@ -249,6 +261,38 @@ export default function EarnLoopApp() {
     } catch {}
   }
 
+  async function submitWithdrawal() {
+    setWError("");
+    setWSuccess("");
+    const amount = profile?.balance || 0;
+    if (!wName.trim() || !wAccount.trim()) {
+      setWError("Account name aur account number/JazzCash number dono chahiye.");
+      return;
+    }
+    if (amount < 10) {
+      setWError("Minimum withdrawal $10 hai.");
+      return;
+    }
+    setWWorking(true);
+    try {
+      await restRequest("rpc/request_withdrawal", {
+        method: "POST",
+        token: session.token,
+        body: { p_user_id: session.userId, p_amount: amount, p_method: wMethod, p_account_name: wName.trim(), p_account_number: wAccount.trim() },
+      });
+      setProfile((p) => ({ ...p, balance: 0 }));
+      setActivity((prev) => [{ label: "Withdrawal requested", amount: -amount, created_at: new Date().toISOString() }, ...prev]);
+      setWithdrawals((prev) => [{ amount, method: wMethod, status: "pending", created_at: new Date().toISOString() }, ...prev]);
+      setWSuccess("Request submit ho gayi! Aapko 1-3 din me payment mil jayegi.");
+      setWName("");
+      setWAccount("");
+      setTimeout(() => setShowWithdraw(false), 2000);
+    } catch (e) {
+      setWError(e.message);
+    }
+    setWWorking(false);
+  }
+
   function copyCode() {
     if (!profile) return;
     navigator.clipboard?.writeText(profile.referral_code);
@@ -364,20 +408,56 @@ export default function EarnLoopApp() {
             <div style={{ background: `linear-gradient(135deg, ${COLORS.card}, ${COLORS.surface})`, borderRadius: 16, padding: 24, border: `1px solid ${COLORS.gold}55` }}>
               <div style={{ fontSize: 12, color: COLORS.sage, fontFamily: "'Helvetica Neue', sans-serif" }}>Available balance</div>
               <div style={{ fontSize: 34, fontWeight: 700, color: COLORS.gold, margin: "6px 0" }}>${profile?.balance?.toFixed(2)}</div>
-              <button disabled={!profile || profile.balance < 10}
+              <button onClick={() => setShowWithdraw(true)} disabled={!profile || profile.balance < 10}
                 style={{ marginTop: 10, background: profile && profile.balance >= 10 ? COLORS.gold : COLORS.card, color: profile && profile.balance >= 10 ? COLORS.bg : COLORS.sage, border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontFamily: "'Helvetica Neue', sans-serif", cursor: profile && profile.balance >= 10 ? "pointer" : "default" }}>
                 Cash out (min. $10)
               </button>
             </div>
+
+            {showWithdraw && (
+              <div style={{ background: COLORS.surface, borderRadius: 14, padding: 18, border: `1px solid ${COLORS.gold}44`, fontFamily: "'Helvetica Neue', sans-serif" }}>
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>Withdrawal request — ${profile?.balance?.toFixed(2)}</div>
+                <select value={wMethod} onChange={(e) => setWMethod(e.target.value)} style={{ ...inputStyle }}>
+                  <option value="jazzcash">JazzCash</option>
+                  <option value="easypaisa">Easypaisa</option>
+                  <option value="bank">Bank Transfer</option>
+                </select>
+                <input style={inputStyle} placeholder="Account holder ka naam" value={wName} onChange={(e) => setWName(e.target.value)} />
+                <input style={inputStyle} placeholder={wMethod === "bank" ? "Account number" : "Mobile number"} value={wAccount} onChange={(e) => setWAccount(e.target.value)} />
+                {wError && <div style={{ color: COLORS.rust, fontSize: 13, marginBottom: 10 }}>{wError}</div>}
+                {wSuccess && <div style={{ color: COLORS.sage, fontSize: 13, marginBottom: 10 }}>{wSuccess}</div>}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={submitWithdrawal} disabled={wWorking} style={{ flex: 1, background: COLORS.gold, color: COLORS.bg, border: "none", borderRadius: 10, padding: "10px", fontWeight: 700, cursor: "pointer" }}>
+                    {wWorking ? "..." : "Request bhejo"}
+                  </button>
+                  <button onClick={() => setShowWithdraw(false)} style={{ flex: 1, background: "none", border: `1px solid ${COLORS.card}`, color: COLORS.sage, borderRadius: 10, padding: "10px", cursor: "pointer" }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
               <div style={{ fontSize: 13, color: COLORS.sage, marginBottom: 10 }}>Recent activity</div>
               {activity.length === 0 && <div style={{ fontSize: 13, color: COLORS.sage }}>Koi activity nahi hai abhi.</div>}
               {activity.map((row, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${COLORS.card}`, fontSize: 14 }}>
-                  <span>{row.label}</span><span style={{ color: COLORS.sage }}>+${row.amount}</span>
+                  <span>{row.label}</span><span style={{ color: row.amount < 0 ? COLORS.rust : COLORS.sage }}>{row.amount < 0 ? "-" : "+"}${Math.abs(row.amount)}</span>
                 </div>
               ))}
             </div>
+
+            {withdrawals.length > 0 && (
+              <div style={{ fontFamily: "'Helvetica Neue', sans-serif" }}>
+                <div style={{ fontSize: 13, color: COLORS.sage, marginBottom: 10 }}>Withdrawal history</div>
+                {withdrawals.map((w, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${COLORS.card}`, fontSize: 14 }}>
+                    <span>{w.method} — ${w.amount}</span>
+                    <span style={{ color: w.status === "paid" ? COLORS.sage : w.status === "rejected" ? COLORS.rust : COLORS.gold }}>{w.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
               <button onClick={() => setTab("policy")} style={{ flex: 1, background: "none", border: `1px solid ${COLORS.card}`, color: COLORS.sage, borderRadius: 10, padding: "10px", fontSize: 13, fontFamily: "'Helvetica Neue', sans-serif", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <FileText size={14} /> Policy
