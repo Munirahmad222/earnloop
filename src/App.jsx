@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Coins, Users, PlayCircle, Wallet, Home, UserPlus, Copy, Check, LogOut, Video, MessageCircle, FileText, Upload, Volume2, VolumeX } from "lucide-react";
+import { Coins, Users, PlayCircle, Wallet, Home, UserPlus, Copy, Check, LogOut, Video, MessageCircle, FileText, Upload, Volume2, VolumeX, BookOpen, User } from "lucide-react";
 
 const SUPABASE_URL = "https://jzynfiopgqmpjnbglrjz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_AFTcbb2N7gIFo-eJMb0Zhg_8Cfg7hPI";
 const FAKE_DOMAIN = "@earnloop.local";
+const USD_TO_PKR = 280; // approximate rate — update as needed
 
 const COLORS = {
   bg: "#0F241C",
@@ -63,6 +64,8 @@ async function uploadFile(bucket, path, file, token) {
   return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`;
 }
 
+const ARTICLE_CATEGORIES = ["Education", "Health", "Apps & Tech", "Market & Trading", "Business", "Lifestyle", "News", "Entertainment", "Sports", "General"];
+
 const RULES_TEXT = [
   "Har user sirf apna asli data (username, video, posts) submit kare.",
   "Ek se zyada fake accounts bana kar referral bonus lena mana hai.",
@@ -115,10 +118,25 @@ export default function EarnLoopApp() {
   const [wWorking, setWWorking] = useState(false);
   const [withdrawals, setWithdrawals] = useState([]);
 
+  const [articles, setArticles] = useState([]);
+  const [articleReadIds, setArticleReadIds] = useState(new Set());
+  const [showWriteArticle, setShowWriteArticle] = useState(false);
+  const [articleTitle, setArticleTitle] = useState("");
+  const [articleBody, setArticleBody] = useState("");
+  const [articleCategory, setArticleCategory] = useState("General");
+  const [articleOriginal, setArticleOriginal] = useState(false);
+  const [filterCategory, setFilterCategory] = useState("All");
+  const [openArticle, setOpenArticle] = useState(null);
+
+  const [bioInput, setBioInput] = useState("");
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+
   async function loadEverything(token, userId) {
     const profRows = await restRequest(`profiles?id=eq.${userId}`, { token });
     const prof = profRows[0];
     setProfile(prof);
+    setBioInput(prof?.bio || "");
 
     const feed = await restRequest(`posts?select=*,profiles(username)&order=created_at.desc&limit=30`, { token });
     setPosts(feed);
@@ -140,6 +158,12 @@ export default function EarnLoopApp() {
 
     const wds = await restRequest(`withdrawal_requests?user_id=eq.${userId}&order=created_at.desc&limit=20`, { token });
     setWithdrawals(wds);
+
+    const arts = await restRequest(`articles?select=*,profiles(username)&order=created_at.desc&limit=30`, { token });
+    setArticles(arts);
+
+    const reads = await restRequest(`article_reads?user_id=eq.${userId}&select=article_id`, { token });
+    setArticleReadIds(new Set(reads.map((r) => r.article_id)));
 
     if (prof) {
       const refs = await restRequest(`profiles?referred_by=eq.${userId}&select=id`, { token });
@@ -293,6 +317,65 @@ export default function EarnLoopApp() {
     setWWorking(false);
   }
 
+  async function publishArticle() {
+    if (!articleTitle.trim() || !articleBody.trim() || !session) return;
+    if (!articleOriginal) {
+      setAuthError("Kripya confirm karein ke ye aapka apna original article hai.");
+      return;
+    }
+    try {
+      await restRequest("rpc/publish_article", { method: "POST", token: session.token, body: { p_user_id: session.userId, p_title: articleTitle.trim(), p_body: articleBody.trim(), p_category: articleCategory } });
+      setProfile((p) => ({ ...p, balance: +(p.balance + 1.0).toFixed(2) }));
+      setActivity((prev) => [{ label: "Article published", amount: 1.0, created_at: new Date().toISOString() }, ...prev]);
+      setArticleTitle("");
+      setArticleBody("");
+      setArticleOriginal(false);
+      setShowWriteArticle(false);
+      const arts = await restRequest(`articles?select=*,profiles(username)&order=created_at.desc&limit=30`, { token: session.token });
+      setArticles(arts);
+    } catch (e) {
+      setAuthError("Article publish fail: " + e.message);
+    }
+  }
+
+  async function readArticle(article) {
+    setOpenArticle(article);
+    if (!session || articleReadIds.has(article.id) || article.user_id === session.userId) return;
+    try {
+      await restRequest("rpc/credit_article_read", { method: "POST", token: session.token, body: { p_user_id: session.userId, p_article_id: article.id } });
+      setArticleReadIds((prev) => new Set(prev).add(article.id));
+      setProfile((p) => ({ ...p, balance: +(p.balance + 0.05).toFixed(2) }));
+      setActivity((prev) => [{ label: "Article read", amount: 0.05, created_at: new Date().toISOString() }, ...prev]);
+    } catch {}
+  }
+
+  async function handleAvatarUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file || !session) return;
+    setAvatarUploading(true);
+    try {
+      const path = `${session.userId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.]/g, "_")}`;
+      const url = await uploadFile("avatars", path, file, session.token);
+      await restRequest(`profiles?id=eq.${session.userId}`, { method: "PATCH", token: session.token, body: { avatar_url: url } });
+      setProfile((p) => ({ ...p, avatar_url: url }));
+    } catch (err) {
+      setAuthError("Avatar upload fail: " + err.message);
+    }
+    setAvatarUploading(false);
+  }
+
+  async function saveBio() {
+    if (!session) return;
+    try {
+      await restRequest(`profiles?id=eq.${session.userId}`, { method: "PATCH", token: session.token, body: { bio: bioInput.trim() } });
+      setProfile((p) => ({ ...p, bio: bioInput.trim() }));
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 1500);
+    } catch (err) {
+      setAuthError("Bio save fail: " + err.message);
+    }
+  }
+
   function copyCode() {
     if (!profile) return;
     navigator.clipboard?.writeText(profile.referral_code);
@@ -339,8 +422,19 @@ export default function EarnLoopApp() {
     <>
       <header style={{ padding: "14px 20px 12px", borderBottom: `1px solid ${COLORS.card}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>EarnLoop</div>
-          <div style={{ fontSize: 11, color: COLORS.sage, fontFamily: "'Helvetica Neue', sans-serif" }}>@{profile?.username}</div>
+          <button onClick={() => setTab("profile")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt="avatar" style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", border: `1px solid ${COLORS.gold}` }} />
+            ) : (
+              <div style={{ width: 32, height: 32, borderRadius: "50%", background: COLORS.card, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <User size={16} color={COLORS.sage} />
+              </div>
+            )}
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontSize: 18, fontWeight: 700 }}>EarnLoop</div>
+              <div style={{ fontSize: 11, color: COLORS.sage, fontFamily: "'Helvetica Neue', sans-serif" }}>@{profile?.username}</div>
+            </div>
+          </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, background: COLORS.card, padding: "6px 12px", borderRadius: 20, border: `1px solid ${COLORS.gold}44` }}>
@@ -416,7 +510,8 @@ export default function EarnLoopApp() {
 
             {showWithdraw && (
               <div style={{ background: COLORS.surface, borderRadius: 14, padding: 18, border: `1px solid ${COLORS.gold}44`, fontFamily: "'Helvetica Neue', sans-serif" }}>
-                <div style={{ fontWeight: 700, marginBottom: 10 }}>Withdrawal request — ${profile?.balance?.toFixed(2)}</div>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Withdrawal request — ${profile?.balance?.toFixed(2)}</div>
+                <div style={{ fontSize: 12, color: COLORS.sage, marginBottom: 10 }}>≈ Rs {(profile?.balance * USD_TO_PKR).toFixed(0)} PKR (JazzCash/Easypaisa/Bank me milega)</div>
                 <select value={wMethod} onChange={(e) => setWMethod(e.target.value)} style={{ ...inputStyle }}>
                   <option value="jazzcash">JazzCash</option>
                   <option value="easypaisa">Easypaisa</option>
@@ -487,6 +582,100 @@ export default function EarnLoopApp() {
           </div>
         )}
 
+        {tab === "profile" && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, fontFamily: "'Helvetica Neue', sans-serif" }}>
+            <label style={{ cursor: "pointer", position: "relative" }}>
+              {profile?.avatar_url ? (
+                <img src={profile.avatar_url} alt="avatar" style={{ width: 96, height: 96, borderRadius: "50%", objectFit: "cover", border: `2px solid ${COLORS.gold}` }} />
+              ) : (
+                <div style={{ width: 96, height: 96, borderRadius: "50%", background: COLORS.card, display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${COLORS.gold}` }}>
+                  <User size={40} color={COLORS.sage} />
+                </div>
+              )}
+              <div style={{ position: "absolute", bottom: 0, right: 0, background: COLORS.gold, borderRadius: "50%", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {avatarUploading ? "..." : <Upload size={14} color={COLORS.bg} />}
+              </div>
+              <input type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} disabled={avatarUploading} />
+            </label>
+
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 20, fontWeight: 700 }}>@{profile?.username}</div>
+              <div style={{ fontSize: 13, color: COLORS.gold, marginTop: 4 }}>{profile?.balance?.toFixed(2)} coins</div>
+            </div>
+
+            <div style={{ width: "100%" }}>
+              <div style={{ fontSize: 13, color: COLORS.sage, marginBottom: 8 }}>Bio / About</div>
+              <textarea
+                style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: `1px solid ${COLORS.card}`, background: COLORS.surface, color: COLORS.parchment, fontSize: 14, fontFamily: "'Helvetica Neue', sans-serif", minHeight: 90, resize: "vertical", boxSizing: "border-box" }}
+                placeholder="Apne baare me kuch likhein..."
+                value={bioInput}
+                onChange={(e) => setBioInput(e.target.value)}
+                maxLength={160}
+              />
+              <div style={{ fontSize: 11, color: COLORS.sage, textAlign: "right", marginTop: 2 }}>{bioInput.length}/160</div>
+              <button onClick={saveBio} style={{ marginTop: 8, width: "100%", background: COLORS.gold, color: COLORS.bg, border: "none", borderRadius: 10, padding: "10px", fontWeight: 700, cursor: "pointer" }}>
+                {profileSaved ? "✓ Saved" : "Save Bio"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tab === "articles" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, fontFamily: "'Helvetica Neue', sans-serif" }}>
+            {openArticle ? (
+              <div>
+                <button onClick={() => setOpenArticle(null)} style={{ background: "none", border: "none", color: COLORS.gold, marginBottom: 14, cursor: "pointer", fontSize: 13 }}>← Wapas</button>
+                <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>{openArticle.title}</div>
+                <div style={{ fontSize: 12, color: COLORS.sage, marginBottom: 14 }}>@{openArticle.profiles?.username}</div>
+                <div style={{ fontSize: 15, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{openArticle.body}</div>
+                {articleReadIds.has(openArticle.id) && (
+                  <div style={{ marginTop: 16, fontSize: 12, color: COLORS.sage }}>✓ Credited +$0.05 for reading</div>
+                )}
+              </div>
+            ) : (
+              <>
+                <button onClick={() => setShowWriteArticle((s) => !s)} style={{ background: COLORS.gold, color: COLORS.bg, border: "none", borderRadius: 10, padding: "10px", fontWeight: 700, cursor: "pointer" }}>
+                  {showWriteArticle ? "Cancel" : "+ Naya article likho (+$1.00)"}
+                </button>
+                {showWriteArticle && (
+                  <div style={{ background: COLORS.surface, borderRadius: 14, padding: 16, border: `1px solid ${COLORS.card}` }}>
+                    <input style={inputStyle} placeholder="Title" value={articleTitle} onChange={(e) => setArticleTitle(e.target.value)} />
+                    <select style={inputStyle} value={articleCategory} onChange={(e) => setArticleCategory(e.target.value)}>
+                      {ARTICLE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <textarea style={{ ...inputStyle, minHeight: 120, resize: "vertical" }} placeholder="Article likho..." value={articleBody} onChange={(e) => setArticleBody(e.target.value)} />
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: COLORS.sage, marginBottom: 12, cursor: "pointer" }}>
+                      <input type="checkbox" checked={articleOriginal} onChange={(e) => setArticleOriginal(e.target.checked)} />
+                      Ye mera apna original article hai (copy-paste nahi)
+                    </label>
+                    <button onClick={publishArticle} style={{ background: COLORS.gold, color: COLORS.bg, border: "none", borderRadius: 10, padding: "10px", fontWeight: 700, cursor: "pointer", width: "100%" }}>Publish</button>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 4 }}>
+                  {["All", ...ARTICLE_CATEGORIES].map((c) => (
+                    <button key={c} onClick={() => setFilterCategory(c)}
+                      style={{ flexShrink: 0, background: filterCategory === c ? COLORS.gold : "none", color: filterCategory === c ? COLORS.bg : COLORS.sage, border: `1px solid ${filterCategory === c ? COLORS.gold : COLORS.card}`, borderRadius: 20, padding: "6px 14px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      {c}
+                    </button>
+                  ))}
+                </div>
+                {articles.length === 0 && <div style={{ color: COLORS.sage, fontSize: 13, textAlign: "center", padding: 20 }}>Koi article nahi hai abhi.</div>}
+                {articles.filter((a) => filterCategory === "All" || a.category === filterCategory).map((a) => {
+                  const read = articleReadIds.has(a.id);
+                  return (
+                    <div key={a.id} onClick={() => readArticle(a)} style={{ background: COLORS.surface, borderRadius: 14, padding: 16, border: `1px solid ${COLORS.card}`, cursor: "pointer" }}>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>{a.title}</div>
+                      <div style={{ fontSize: 12, color: COLORS.sage, marginBottom: 8 }}>@{a.profiles?.username} · <span style={{ color: COLORS.gold }}>{a.category}</span></div>
+                      <div style={{ fontSize: 13, color: COLORS.parchment, opacity: 0.8 }}>{a.body.slice(0, 100)}{a.body.length > 100 ? "..." : ""}</div>
+                      <div style={{ marginTop: 8, fontSize: 12, color: read ? COLORS.sage : COLORS.gold }}>{read ? "✓ Read" : "Tap to read +$0.05"}</div>
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        )}
+
         {tab === "policy" && <TextPage title="Privacy Policy" items={POLICY_TEXT} colors={COLORS} onBack={() => setTab("wallet")} />}
         {tab === "rules" && <TextPage title="Rules" items={RULES_TEXT} colors={COLORS} onBack={() => setTab("wallet")} />}
       </main>
@@ -502,12 +691,13 @@ export default function EarnLoopApp() {
         {[
           { key: "feed", icon: Home, label: "Feed" },
           { key: "videos", icon: Video, label: "Videos" },
+          { key: "articles", icon: BookOpen, label: "Articles" },
           { key: "invite", icon: UserPlus, label: "Invite" },
           { key: "chat", icon: MessageCircle, label: "Chat" },
           { key: "wallet", icon: Wallet, label: "Wallet" },
         ].map(({ key, icon: Icon, label }) => (
-          <button key={key} onClick={() => setTab(key)} style={{ background: "none", border: "none", color: tab === key ? COLORS.gold : COLORS.sage, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 10, cursor: "pointer" }}>
-            <Icon size={18} />{label}
+          <button key={key} onClick={() => setTab(key)} style={{ background: "none", border: "none", color: tab === key ? COLORS.gold : COLORS.sage, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, fontSize: 9, cursor: "pointer" }}>
+            <Icon size={17} />{label}
           </button>
         ))}
       </nav>
