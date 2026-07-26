@@ -85,16 +85,6 @@ const POLICY_TEXT = [
 ];
 
 export default function EarnLoopApp() {
-  useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://pl30533782.effectivecpmnetwork.com/a6/3a/3a/a63a3aa89c04404b312674d674ac8264.js";
-    script.async = true;
-    document.body.appendChild(script);
-    return () => {
-      document.body.removeChild(script);
-    };
-  }, []);
-
   const [screen, setScreen] = useState("login");
   const [tab, setTab] = useState("feed");
   const [formUser, setFormUser] = useState("");
@@ -104,6 +94,19 @@ export default function EarnLoopApp() {
   const [working, setWorking] = useState(false);
 
   const [session, setSession] = useState(null);
+
+  // Only load the Social Bar ad after the person has logged in and settled into the app —
+  // never on the login/signup screen or immediately on open.
+  useEffect(() => {
+    if (!session) return;
+    const timer = setTimeout(() => {
+      const script = document.createElement("script");
+      script.src = "https://pl30533782.effectivecpmnetwork.com/a6/3a/3a/a63a3aa89c04404b312674d674ac8264.js";
+      script.async = true;
+      document.body.appendChild(script);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [session]);
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [postText, setPostText] = useState("");
@@ -431,16 +434,16 @@ export default function EarnLoopApp() {
   if (screen === "login" || screen === "signup") {
     return wrap(
       <div style={{ padding: 24, display: "flex", flexDirection: "column", justifyContent: "center", flex: 1 }}>
-        <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontSize: 28, fontWeight: 700 }}>EarnLoop</div>
-          <div style={{ fontSize: 13, color: COLORS.sage, fontFamily: "'Helvetica Neue', sans-serif" }}>earn together, cash out together</div>
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
+          <div style={{ fontSize: 32, fontWeight: 700, letterSpacing: 0.5, textShadow: `0 0 24px ${COLORS.gold}33` }}>EarnLoop</div>
+          <div style={{ fontSize: 13, color: COLORS.sage, fontFamily: "'Helvetica Neue', sans-serif", marginTop: 4 }}>earn together, cash out together</div>
         </div>
         <input style={inputStyle} placeholder="Username" value={formUser} onChange={(e) => setFormUser(e.target.value)} />
         <input style={inputStyle} placeholder="Password (6+ characters)" type="password" value={formPass} onChange={(e) => setFormPass(e.target.value)} />
         {screen === "signup" && <input style={inputStyle} placeholder="Referral code (optional)" value={refInput} onChange={(e) => setRefInput(e.target.value)} />}
         {authError && <div style={{ color: COLORS.rust, fontSize: 13, marginBottom: 12, fontFamily: "'Helvetica Neue', sans-serif" }}>{authError}</div>}
         <button onClick={screen === "login" ? handleLogin : handleSignup} disabled={working}
-          style={{ background: COLORS.gold, color: COLORS.bg, border: "none", borderRadius: 10, padding: "12px", fontWeight: 700, fontSize: 15, fontFamily: "'Helvetica Neue', sans-serif", cursor: "pointer", marginBottom: 14 }}>
+          style={{ background: `linear-gradient(135deg, ${COLORS.gold}, #C89A3E)`, color: COLORS.bg, border: "none", borderRadius: 12, padding: "14px", fontWeight: 700, fontSize: 15, fontFamily: "'Helvetica Neue', sans-serif", cursor: "pointer", marginBottom: 14, boxShadow: `0 6px 20px ${COLORS.gold}44`, transition: "transform 0.15s ease" }}>
           {working ? "..." : screen === "login" ? "Log in" : "Sign up"}
         </button>
         <button onClick={() => { setScreen(screen === "login" ? "signup" : "login"); setAuthError(""); }}
@@ -453,7 +456,7 @@ export default function EarnLoopApp() {
 
   return wrap(
     <>
-      <header style={{ padding: "14px 20px 12px", borderBottom: `1px solid ${COLORS.card}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <header style={{ padding: "16px 20px 14px", background: `linear-gradient(180deg, ${COLORS.surface}, ${COLORS.bg})`, borderBottom: `1px solid ${COLORS.gold}22`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div>
           <button onClick={() => setTab("profile")} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
             {profile?.avatar_url ? (
@@ -470,7 +473,7 @@ export default function EarnLoopApp() {
           </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, background: COLORS.card, padding: "6px 12px", borderRadius: 20, border: `1px solid ${COLORS.gold}44` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, background: `linear-gradient(135deg, ${COLORS.card}, ${COLORS.surface})`, padding: "7px 14px", borderRadius: 20, border: `1px solid ${COLORS.gold}55`, boxShadow: `0 2px 10px ${COLORS.gold}22` }}>
             <Coins size={16} color={COLORS.gold} />
             <span style={{ fontFamily: "'Helvetica Neue', sans-serif", fontWeight: 600 }}>${profile?.balance?.toFixed(2)}</span>
           </div>
@@ -488,7 +491,7 @@ export default function EarnLoopApp() {
             {posts.map((p) => {
               const watched = watchedIds.has(p.id);
               return (
-                <div key={p.id} style={{ background: COLORS.surface, borderRadius: 14, padding: 16, border: `1px solid ${COLORS.card}` }}>
+                <div key={p.id} style={{ background: COLORS.surface, borderRadius: 16, padding: 18, border: `1px solid ${COLORS.card}`, boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }}>
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>@{p.profiles?.username || "unknown"}</div>
                   <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 12px", fontFamily: "'Helvetica Neue', sans-serif" }}>{p.text}</p>
                   <button
@@ -542,7 +545,7 @@ export default function EarnLoopApp() {
 
         {tab === "wallet" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ background: `linear-gradient(135deg, ${COLORS.card}, ${COLORS.surface})`, borderRadius: 16, padding: 24, border: `1px solid ${COLORS.gold}55` }}>
+            <div style={{ background: `linear-gradient(135deg, ${COLORS.card}, ${COLORS.surface})`, borderRadius: 20, padding: 26, border: `1px solid ${COLORS.gold}55`, boxShadow: `0 8px 30px ${COLORS.gold}22, 0 4px 16px rgba(0,0,0,0.3)` }}>
               <div style={{ fontSize: 12, color: COLORS.sage, fontFamily: "'Helvetica Neue', sans-serif" }}>Available balance</div>
               <div style={{ fontSize: 34, fontWeight: 700, color: COLORS.gold, margin: "6px 0" }}>${profile?.balance?.toFixed(2)}</div>
               <button onClick={() => setShowWithdraw(true)} disabled={!profile || profile.balance < 10}
@@ -730,7 +733,7 @@ export default function EarnLoopApp() {
         </label>
       )}
 
-      <nav style={{ position: "sticky", bottom: 0, background: COLORS.surface, borderTop: `1px solid ${COLORS.card}`, display: "flex", justifyContent: "space-around", padding: "10px 0", fontFamily: "'Helvetica Neue', sans-serif" }}>
+      <nav style={{ position: "sticky", bottom: 0, background: `linear-gradient(180deg, ${COLORS.surface}, ${COLORS.bg})`, borderTop: `1px solid ${COLORS.gold}22`, boxShadow: "0 -4px 16px rgba(0,0,0,0.3)", display: "flex", justifyContent: "space-around", padding: "10px 0", fontFamily: "'Helvetica Neue', sans-serif" }}>
         {[
           { key: "feed", icon: Home, label: "Feed" },
           { key: "videos", icon: Video, label: "Videos" },
