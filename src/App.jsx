@@ -94,6 +94,25 @@ export default function EarnLoopApp() {
   const [working, setWorking] = useState(false);
 
   const [session, setSession] = useState(null);
+  const [booting, setBooting] = useState(true);
+
+  // Restore saved session (if any) when the app loads, so refreshing doesn't log people out.
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = localStorage.getItem("earnloop-session");
+        if (saved) {
+          const { token, userId } = JSON.parse(saved);
+          await loadEverything(token, userId);
+          setSession({ token, userId });
+          setScreen("app");
+        }
+      } catch (e) {
+        localStorage.removeItem("earnloop-session");
+      }
+      setBooting(false);
+    })();
+  }, []);
 
   // Only load the Social Bar ad after the person has logged in and settled into the app —
   // never on the login/signup screen or immediately on open.
@@ -209,6 +228,7 @@ export default function EarnLoopApp() {
       if (ref) await restRequest("rpc/apply_referral", { method: "POST", token, body: { new_user_id: userId, ref_code: ref } });
 
       setSession({ token, userId });
+      localStorage.setItem("earnloop-session", JSON.stringify({ token, userId }));
       await loadEverything(token, userId);
       setScreen("app");
     } catch (e) {
@@ -226,6 +246,7 @@ export default function EarnLoopApp() {
       const token = data.access_token;
       const userId = data.user?.id;
       setSession({ token, userId });
+      localStorage.setItem("earnloop-session", JSON.stringify({ token, userId }));
       await loadEverything(token, userId);
       setScreen("app");
     } catch (e) {
@@ -240,6 +261,7 @@ export default function EarnLoopApp() {
     setScreen("login");
     setFormUser("");
     setFormPass("");
+    localStorage.removeItem("earnloop-session");
   }
 
   function watchAd(postId) {
@@ -430,6 +452,14 @@ export default function EarnLoopApp() {
       {children}
     </div>
   );
+
+  if (booting) {
+    return wrap(
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ color: COLORS.sage, fontFamily: "'Helvetica Neue', sans-serif" }}>Loading...</div>
+      </div>
+    );
+  }
 
   if (screen === "login" || screen === "signup") {
     return wrap(
