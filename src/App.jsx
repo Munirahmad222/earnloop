@@ -5,6 +5,7 @@ const SUPABASE_URL = "https://jzynfiopgqmpjnbglrjz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_AFTcbb2N7gIFo-eJMb0Zhg_8Cfg7hPI";
 const FAKE_DOMAIN = "@earnloop.local";
 const USD_TO_PKR = 280; // approximate rate — update as needed
+const ADSTERRA_SMARTLINK = "https://www.effectivecpmnetwork.com/nvp9630piq?key=2ee79348d98b86e9efcd3f07d0ae0758";
 
 const COLORS = {
   bg: "#0F241C",
@@ -84,6 +85,16 @@ const POLICY_TEXT = [
 ];
 
 export default function EarnLoopApp() {
+  useEffect(() => {
+    const script = document.createElement("script");
+    script.src = "https://pl30533782.effectivecpmnetwork.com/a6/3a/3a/a63a3aa89c04404b312674d674ac8264.js";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => {
+      document.body.removeChild(script);
+    };
+  }, []);
+
   const [screen, setScreen] = useState("login");
   const [tab, setTab] = useState("feed");
   const [formUser, setFormUser] = useState("");
@@ -98,6 +109,7 @@ export default function EarnLoopApp() {
   const [postText, setPostText] = useState("");
   const [activity, setActivity] = useState([]);
   const [watchedIds, setWatchedIds] = useState(new Set());
+  const [adCountdowns, setAdCountdowns] = useState({}); // postId -> seconds remaining
   const [copied, setCopied] = useState(false);
   const [referralCount, setReferralCount] = useState(0);
 
@@ -227,7 +239,28 @@ export default function EarnLoopApp() {
     setFormPass("");
   }
 
-  async function watchAd(postId) {
+  function watchAd(postId) {
+    if (!session || watchedIds.has(postId) || adCountdowns[postId] !== undefined) return;
+    window.open(ADSTERRA_SMARTLINK, "_blank");
+    let seconds = 15;
+    setAdCountdowns((prev) => ({ ...prev, [postId]: seconds }));
+    const interval = setInterval(() => {
+      seconds -= 1;
+      if (seconds <= 0) {
+        clearInterval(interval);
+        setAdCountdowns((prev) => {
+          const next = { ...prev };
+          delete next[postId];
+          return next;
+        });
+        creditAdWatch(postId);
+      } else {
+        setAdCountdowns((prev) => ({ ...prev, [postId]: seconds }));
+      }
+    }, 1000);
+  }
+
+  async function creditAdWatch(postId) {
     if (!session || watchedIds.has(postId)) return;
     try {
       await restRequest("rpc/credit_ad_watch", { method: "POST", token: session.token, body: { p_user_id: session.userId, p_post_id: postId } });
@@ -452,16 +485,27 @@ export default function EarnLoopApp() {
               <input style={{ ...inputStyle, marginBottom: 0, flex: 1 }} placeholder="Share something..." value={postText} onChange={(e) => setPostText(e.target.value)} />
               <button onClick={submitPost} style={{ background: COLORS.gold, color: COLORS.bg, border: "none", borderRadius: 10, padding: "0 16px", fontWeight: 700, cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif" }}>Post</button>
             </div>
+            <NativeBannerAd />
             {posts.map((p) => {
               const watched = watchedIds.has(p.id);
               return (
                 <div key={p.id} style={{ background: COLORS.surface, borderRadius: 14, padding: 16, border: `1px solid ${COLORS.card}` }}>
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>@{p.profiles?.username || "unknown"}</div>
                   <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 12px", fontFamily: "'Helvetica Neue', sans-serif" }}>{p.text}</p>
-                  <button onClick={() => watchAd(p.id)} disabled={watched}
-                    style={{ display: "flex", alignItems: "center", gap: 8, background: watched ? "transparent" : COLORS.gold, color: watched ? COLORS.sage : COLORS.bg, border: watched ? `1px solid ${COLORS.sage}` : "none", borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 700, fontFamily: "'Helvetica Neue', sans-serif", cursor: watched ? "default" : "pointer" }}>
+                  <button
+                    onClick={() => watchAd(p.id)}
+                    disabled={watched || adCountdowns[p.id] !== undefined}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8,
+                      background: watched ? "transparent" : COLORS.gold,
+                      color: watched ? COLORS.sage : COLORS.bg,
+                      border: watched ? `1px solid ${COLORS.sage}` : "none",
+                      borderRadius: 10, padding: "8px 14px", fontSize: 13, fontWeight: 700,
+                      fontFamily: "'Helvetica Neue', sans-serif", cursor: watched ? "default" : "pointer",
+                    }}
+                  >
                     <PlayCircle size={16} />
-                    {watched ? "Credited +$0.15" : "Watch to earn $0.15"}
+                    {watched ? "Credited +$0.15" : adCountdowns[p.id] !== undefined ? `Ad khul gaya, wait karo (${adCountdowns[p.id]}s)` : "Watch to earn $0.15"}
                   </button>
                 </div>
               );
@@ -703,6 +747,23 @@ export default function EarnLoopApp() {
       </nav>
     </>
   );
+}
+
+function NativeBannerAd() {
+  const containerRef = useRef(null);
+  useEffect(() => {
+    if (!containerRef.current || containerRef.current.dataset.loaded) return;
+    containerRef.current.dataset.loaded = "true";
+    const div = document.createElement("div");
+    div.id = "container-bbcb6402599b65e4197086b6da65f83b";
+    const script = document.createElement("script");
+    script.async = true;
+    script.setAttribute("data-cfasync", "false");
+    script.src = "https://pl30533783.effectivecpmnetwork.com/bbcb6402599b65e4197086b6da65f83b/invoke.js";
+    containerRef.current.appendChild(div);
+    containerRef.current.appendChild(script);
+  }, []);
+  return <div ref={containerRef} style={{ margin: "8px 0" }} />;
 }
 
 function TextPage({ title, items, colors, onBack }) {
