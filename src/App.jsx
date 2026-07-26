@@ -485,7 +485,6 @@ export default function EarnLoopApp() {
               <input style={{ ...inputStyle, marginBottom: 0, flex: 1 }} placeholder="Share something..." value={postText} onChange={(e) => setPostText(e.target.value)} />
               <button onClick={submitPost} style={{ background: COLORS.gold, color: COLORS.bg, border: "none", borderRadius: 10, padding: "0 16px", fontWeight: 700, cursor: "pointer", fontFamily: "'Helvetica Neue', sans-serif" }}>Post</button>
             </div>
-            <NativeBannerAd />
             {posts.map((p) => {
               const watched = watchedIds.has(p.id);
               return (
